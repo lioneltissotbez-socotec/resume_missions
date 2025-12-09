@@ -560,7 +560,8 @@
         return null;
       }
 
-      const normalizedPath = pathText.replace(/\\/g, "/").replace(/\/+/g, "/");
+      const normalizedPath = pathText.replace(/\\/g, "/");
+
 
       try {
         const file = await getFileFromRelativePath(missionFolderHandle, normalizedPath);
