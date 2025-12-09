@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard Missions – Synthèse Liciel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div>
+        <h1>Dashboard Missions – Synthèse Liciel</h1>
+        <p class="subtitle">
+          Scan des dossiers, filtres avancés, export des numéros et sauvegarde JSON.
+        </p>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>1. Sélection du dossier racine</h2>
+      <div class="flex-row">
+        <button id="btnPickRoot" class="btn primary">📁 Choisir le dossier racine</button>
+        <span id="rootInfo" class="info-text">Aucun dossier sélectionné.</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Paramètres de scan</h2>
+
+      <div class="scan-modes">
+        <label>
+          <input type="radio" name="scanMode" value="all" checked />
+          Scanner tous les sous-dossiers
+        </label>
+        <label>
+          <input type="radio" name="scanMode" value="prefix" />
+          Filtrer par préfixe (1 à 9 chiffres)
+        </label>
+        <label>
+          <input type="radio" name="scanMode" value="list" />
+          Liste de numéros de dossiers (coller depuis Excel)
+        </label>
+      </div>
+
+      <div id="prefixBlock" class="scan-block hidden">
+        <label for="inputPrefix">Préfixe de dossier :</label>
+        <input id="inputPrefix" type="text" maxlength="9" placeholder="Ex : 230145" />
+      </div>
+
+      <div id="listBlock" class="scan-block hidden">
+        <label for="inputDossierList">Liste de numéros de dossiers :</label>
+        <textarea id="inputDossierList" rows="4"
+          placeholder="Coller ici les numéros de dossiers (un par ligne, ou séparés par des virgules / espaces)."></textarea>
+      </div>
+
+      <div class="scan-actions flex-row">
+        <button id="btnScan" class="btn success">🔍 Lancer le scan</button>
+        <div class="progress-wrapper">
+          <div id="progressBar" class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+          <div id="progressText" class="progress-text">En attente…</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Filtres</h2>
+      <div class="filters-grid">
+        <div>
+          <label for="filterDO">Donneur d'ordre</label>
+          <select id="filterDO" multiple></select>
+          <small>Ctrl/Cmd + clic pour multi-sélection.</small>
+        </div>
+        <div>
+          <label for="filterProp">Propriétaire</label>
+          <select id="filterProp" multiple></select>
+          <small>Ctrl/Cmd + clic pour multi-sélection.</small>
+        </div>
+        <div>
+          <label for="filterOp">Diagnostiqueur</label>
+          <select id="filterOp" multiple></select>
+          <small>Nom Prénom / Société.</small>
+        </div>
+        <div>
+          <label for="filterType">Type de mission</label>
+          <select id="filterType" multiple></select>
+          <small>Sélectionner un ou plusieurs diagnostics.</small>
+        </div>
+        <div>
+          <label for="filterConclusion">Conclusion (texte)</label>
+          <input id="filterConclusion" type="text" placeholder="Recherche plein texte dans les conclusions…" />
+        </div>
+      </div>
+      <div class="flex-row filter-actions">
+        <button id="btnApplyFilters" class="btn">Appliquer les filtres</button>
+        <button id="btnResetFilters" class="btn secondary">Réinitialiser les filtres</button>
+        <span id="statsText" class="info-text"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Export & sauvegarde</h2>
+      <div class="flex-row wrap">
+        <button id="btnExportCSV" class="btn">⬇️ Exporter numéros (CSV)</button>
+        <button id="btnCopyClipboard" class="btn">📋 Copier numéros (presse-papier)</button>
+        <button id="btnExportJSON" class="btn secondary">💾 Exporter base complète (JSON)</button>
+        <button id="btnImportJSON" class="btn secondary">📂 Charger base JSON existante</button>
+        <input id="jsonFileInput" type="file" accept="application/json" class="hidden" />
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5. Résultats</h2>
+      <div id="tableWrapper" class="table-wrapper">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>N° dossier</th>
+              <th>Donneur d'ordre</th>
+              <th>Propriétaire</th>
+              <th>Adresse immeuble</th>
+              <th>Type / nature bien</th>
+              <th>Dates</th>
+              <th>Diagnostiqueur</th>
+              <th>Missions effectuées</th>
+              <th>Conclusion</th>
+              <th>Photo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Lignes générées dynamiquement -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modale conclusion -->
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Conclusion de la mission</h3>
+        <button id="btnCloseModal" class="btn small">✖</button>
+      </div>
+      <div id="modalContent" class="modal-content"></div>
+    </div>
+  </div>
+
+  <!-- Modale photo -->
+  <div id="photoOverlay" class="modal-overlay hidden">
+    <div class="modal modal-photo">
+      <div class="modal-header">
+        <h3>Photo de présentation</h3>
+        <button id="btnClosePhoto" class="btn small">✖</button>
+      </div>
+      <div class="modal-content photo-content">
+        <img id="modalPhoto" alt="Photo de présentation" />
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
