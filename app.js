@@ -99,6 +99,7 @@ function initUI() {
     alert(
       "⚠️ Votre navigateur ou le contexte n'autorise pas la File System Access API. Ouvrez la page via http(s)://localhost ou un navigateur compatible."
     );
+    btnPickRoot.disabled = true;
     $("#rootInfo").textContent = "La sélection de dossiers nécessite un contexte sécurisé (HTTPS ou localhost).";
   }
 
