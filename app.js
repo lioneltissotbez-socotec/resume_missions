@@ -93,8 +93,14 @@ function initUI() {
   const btnCloseModal = $("#btnCloseModal");
   const btnClosePhoto = $("#btnClosePhoto");
 
-  if (!window.showDirectoryPicker) {
-    alert("⚠️ Votre navigateur ne supporte pas la File System Access API. Utilisez Chrome ou Edge récents.");
+  const hasFsAccess = Boolean(window.showDirectoryPicker) && window.isSecureContext;
+
+  if (!hasFsAccess) {
+    alert(
+      "⚠️ Votre navigateur ou le contexte n'autorise pas la File System Access API. Ouvrez la page via http(s)://localhost ou un navigateur compatible."
+    );
+    btnPickRoot.disabled = true;
+    $("#rootInfo").textContent = "La sélection de dossiers nécessite un contexte sécurisé (HTTPS ou localhost).";
   }
 
   // Gestion changement de mode de scan
@@ -152,6 +158,13 @@ function getScanMode() {
 }
 
 async function onPickRoot() {
+  if (!window.showDirectoryPicker || !window.isSecureContext) {
+    alert(
+      "Sélection impossible : activez le mode sécurisé (HTTPS/localhost) et utilisez un navigateur compatible File System Access API."
+    );
+    return;
+  }
+
   try {
     rootDirHandle = await window.showDirectoryPicker();
     $("#rootInfo").textContent = "Dossier racine : " + rootDirHandle.name;
