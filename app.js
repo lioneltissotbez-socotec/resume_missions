@@ -96,13 +96,13 @@
       const btnCloseModal = $("#btnCloseModal");
       const btnClosePhoto = $("#btnClosePhoto");
 
-      const hasFsAccess = Boolean(window.showDirectoryPicker) && window.isSecureContext;
+      const hasFsAccess = typeof window.showDirectoryPicker === "function";
+
 
       if (!hasFsAccess) {
         alert(
           "⚠️ Votre navigateur ou le contexte n'autorise pas la File System Access API. Ouvrez la page via https:// ou http://localhost dans un navigateur compatible."
         );
-        btnPickRoot.disabled = true;
         $("#rootInfo").textContent = "La sélection de dossiers nécessite un contexte sécurisé (HTTPS ou localhost).";
       }
 
