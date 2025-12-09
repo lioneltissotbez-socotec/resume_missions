@@ -37,6 +37,26 @@ h1 {
   font-size: 14px;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.08);
+  color: #15803d;
+  font-size: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.badge .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
+}
+
 .card {
   background: #fff;
   border-radius: 12px;
@@ -67,6 +87,12 @@ h1 {
   color: #5c6b7a;
 }
 
+.hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
 .btn {
   border: none;
   border-radius: 999px;
@@ -75,7 +101,7 @@ h1 {
   cursor: pointer;
   background: #e3e7ee;
   color: #1f2933;
-  transition: background 0.15s, transform 0.05s;
+  transition: background 0.15s, transform 0.05s, box-shadow 0.1s, opacity 0.1s;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -101,31 +127,44 @@ h1 {
   font-size: 12px;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   transform: translateY(-1px);
   background: #d0d7e6;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
 }
 
-.btn.primary:hover {
+.btn.primary:hover:not(:disabled) {
   background: #1557b0;
 }
 
-.btn.success:hover {
+.btn.success:hover:not(:disabled) {
   background: #15803d;
 }
 
-.btn.secondary:hover {
+.btn.secondary:hover:not(:disabled) {
   background: #c7d2fe;
 }
 
-.btn:active {
+.btn:active:not(:disabled) {
   transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .hidden {
   display: none !important;
 }
 
+.hidden-block {
+  display: none !important;
+}
+
+/* Scan */
 .scan-modes {
   display: flex;
   flex-wrap: wrap;
@@ -187,6 +226,7 @@ h1 {
   color: #4b5563;
 }
 
+/* Filtres */
 .filters-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -284,6 +324,7 @@ td .btn-link {
   text-decoration: underline;
 }
 
+/* Photo */
 .photo-thumb {
   width: 80px;
   height: 60px;
@@ -354,6 +395,11 @@ td .btn-link {
   max-width: 100%;
   max-height: 70vh;
   border-radius: 8px;
+}
+
+/* Divers */
+.hidden {
+  display: none !important;
 }
 
 @media (max-width: 768px) {

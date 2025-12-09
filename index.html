@@ -12,19 +12,27 @@
       <div>
         <h1>Dashboard Missions – Synthèse Liciel</h1>
         <p class="subtitle">
-          Scan des dossiers, filtres avancés, export des numéros et sauvegarde JSON.
+          Scan des dossiers LICIEL, filtres avancés, export des numéros et sauvegarde JSON.
         </p>
+      </div>
+      <div class="badge">
+        <span class="dot"></span> Pro · Offline XML
       </div>
     </header>
 
+    <!-- 1. Sélection dossier racine -->
     <section class="card">
       <h2>1. Sélection du dossier racine</h2>
-      <div class="flex-row">
+      <div class="flex-row wrap">
         <button id="btnPickRoot" class="btn primary">📁 Choisir le dossier racine</button>
         <span id="rootInfo" class="info-text">Aucun dossier sélectionné.</span>
       </div>
+      <p class="hint">
+        Utilise Chrome / Edge récents. Idéalement en contexte sécurisé (https:// ou http://localhost) pour la File System Access API.
+      </p>
     </section>
 
+    <!-- 2. Paramètres de scan -->
     <section class="card">
       <h2>2. Paramètres de scan</h2>
 
@@ -54,8 +62,8 @@
           placeholder="Coller ici les numéros de dossiers (un par ligne, ou séparés par des virgules / espaces)."></textarea>
       </div>
 
-      <div class="scan-actions flex-row">
-        <button id="btnScan" class="btn success">🔍 Lancer le scan</button>
+      <div class="scan-actions flex-row wrap">
+        <button id="btnScan" class="btn success" disabled>🔍 Lancer le scan</button>
         <div class="progress-wrapper">
           <div id="progressBar" class="progress-bar">
             <div id="progressFill" class="progress-fill"></div>
@@ -65,7 +73,8 @@
       </div>
     </section>
 
-    <section class="card">
+    <!-- 3. Filtres (masqués avant le scan / import JSON) -->
+    <section id="filtersSection" class="card hidden-block">
       <h2>3. Filtres</h2>
       <div class="filters-grid">
         <div>
@@ -86,31 +95,39 @@
         <div>
           <label for="filterType">Type de mission</label>
           <select id="filterType" multiple></select>
-          <small>Sélectionner un ou plusieurs diagnostics.</small>
+          <small>Diagnostics réellement effectués.</small>
         </div>
         <div>
           <label for="filterConclusion">Conclusion (texte)</label>
           <input id="filterConclusion" type="text" placeholder="Recherche plein texte dans les conclusions…" />
+          <small>Filtre appliqué en temps réel.</small>
         </div>
       </div>
       <div class="flex-row filter-actions">
-        <button id="btnApplyFilters" class="btn">Appliquer les filtres</button>
-        <button id="btnResetFilters" class="btn secondary">Réinitialiser les filtres</button>
+        <div class="flex-row">
+          <button id="btnApplyFilters" class="btn">Appliquer les filtres</button>
+          <button id="btnResetFilters" class="btn secondary">Réinitialiser</button>
+        </div>
         <span id="statsText" class="info-text"></span>
       </div>
     </section>
 
+    <!-- 4. Export & sauvegarde -->
     <section class="card">
       <h2>4. Export & sauvegarde</h2>
       <div class="flex-row wrap">
-        <button id="btnExportCSV" class="btn">⬇️ Exporter numéros (CSV)</button>
-        <button id="btnCopyClipboard" class="btn">📋 Copier numéros (presse-papier)</button>
-        <button id="btnExportJSON" class="btn secondary">💾 Exporter base complète (JSON)</button>
+        <button id="btnExportCSV" class="btn" disabled>⬇️ Exporter numéros (CSV)</button>
+        <button id="btnCopyClipboard" class="btn" disabled>📋 Copier numéros (presse-papier)</button>
+        <button id="btnExportJSON" class="btn secondary" disabled>💾 Exporter base complète (JSON)</button>
         <button id="btnImportJSON" class="btn secondary">📂 Charger base JSON existante</button>
         <input id="jsonFileInput" type="file" accept="application/json" class="hidden" />
       </div>
+      <p class="hint">
+        L’export JSON permet de réutiliser la base sans rescanner les dossiers (partageable entre collègues).
+      </p>
     </section>
 
+    <!-- 5. Résultats -->
     <section class="card">
       <h2>5. Résultats</h2>
       <div id="tableWrapper" class="table-wrapper">
@@ -161,6 +178,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

@@ -1,10 +1,17 @@
-// Dashboard Missions – Synthèse Liciel
-// Utilise la File System Access API (Chrome / Edge récents).
+// Dashboard Missions – Synthèse Liciel (version PRO)
+// ----------------------------------------------------
+// - Scan de dossiers LICIEL via File System Access API
+// - Lecture des XML Table_General_Bien / _conclusions / Photo
+// - Filtres avancés (DO, proprio, opérateur, mission, conclusion)
+// - Export CSV numéros + JSON complet réutilisable
+// ----------------------------------------------------
 
 let rootDirHandle = null;
 let allMissions = [];
 let filteredMissions = [];
+let isScanning = false;
 
+// Types de missions indexés sur LiColonne_Mission_Missions_programmees
 const MISSION_TYPES = [
   "Amiante (DTA)",                 // 00
   "Amiante (Vente)",               // 01
@@ -49,9 +56,18 @@ const MISSION_TYPES = [
   "DPEG"                           // 40
 ];
 
-// Raccourcis DOM
+// Helpers DOM
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+// Petit debounce pour filtrage temps réel
+function debounce(fn, delay = 150) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   initUI();
@@ -81,6 +97,7 @@ function initUI() {
     alert("⚠️ Votre navigateur ne supporte pas la File System Access API. Utilisez Chrome ou Edge récents.");
   }
 
+  // Gestion changement de mode de scan
   scanModeRadios.forEach((radio) => {
     radio.addEventListener("change", () => {
       const mode = getScanMode();
@@ -92,19 +109,28 @@ function initUI() {
   btnPickRoot.addEventListener("click", onPickRoot);
   btnScan.addEventListener("click", onScan);
 
+  // Filtres : bouton + auto-apply
+  const debouncedApply = debounce(applyFilters, 200);
   btnApplyFilters.addEventListener("click", applyFilters);
   btnResetFilters.addEventListener("click", resetFilters);
 
+  ["#filterDO", "#filterProp", "#filterOp", "#filterType"].forEach((sel) => {
+    const el = $(sel);
+    el.addEventListener("change", debouncedApply);
+  });
+  $("#filterConclusion").addEventListener("input", debouncedApply);
   $("#filterConclusion").addEventListener("keyup", (e) => {
     if (e.key === "Enter") applyFilters();
   });
 
+  // Export / JSON
   btnExportCSV.addEventListener("click", exportFilteredAsCSV);
   btnCopyClipboard.addEventListener("click", copyFilteredToClipboard);
   btnExportJSON.addEventListener("click", exportAllAsJSON);
   btnImportJSON.addEventListener("click", () => jsonFileInput.click());
   jsonFileInput.addEventListener("change", onImportJSON);
 
+  // Modales
   btnCloseModal.addEventListener("click", closeConclusionModal);
   $("#modalOverlay").addEventListener("click", (e) => {
     if (e.target.id === "modalOverlay") closeConclusionModal();
@@ -117,6 +143,7 @@ function initUI() {
 
   updateProgress(0, 0, "En attente…");
   updateStats();
+  updateExportButtonsState();
 }
 
 function getScanMode() {
@@ -128,6 +155,7 @@ async function onPickRoot() {
   try {
     rootDirHandle = await window.showDirectoryPicker();
     $("#rootInfo").textContent = "Dossier racine : " + rootDirHandle.name;
+    $("#btnScan").disabled = false;
   } catch (err) {
     console.warn("Sélection de dossier annulée :", err);
   }
@@ -138,6 +166,7 @@ async function onScan() {
     alert("Veuillez d'abord choisir un dossier racine.");
     return;
   }
+  if (isScanning) return;
 
   const mode = getScanMode();
   const prefix = $("#inputPrefix").value.trim();
@@ -160,69 +189,91 @@ async function onScan() {
     return;
   }
 
+  // Reset data
   allMissions = [];
   filteredMissions = [];
   renderTable();
   updateStats();
+  updateExportButtonsState();
 
+  setScanningState(true);
   $("#progressText").textContent = "Scan des sous-dossiers en cours…";
   updateProgress(0, 0, "Préparation du scan…");
 
-  const allEntries = [];
-  for await (const [name, handle] of rootDirHandle.entries()) {
-    if (handle.kind === "directory") {
-      allEntries.push({ name, handle });
+  try {
+    const allEntries = [];
+    for await (const [name, handle] of rootDirHandle.entries()) {
+      if (handle.kind === "directory") {
+        allEntries.push({ name, handle });
+      }
     }
-  }
 
-  const candidates = allEntries.filter(({ name }) => {
-    if (mode === "all") return true;
-    if (mode === "prefix") {
-      return name.startsWith(prefix);
-    }
-    if (mode === "list") {
-      return listItems.some((item) => name.startsWith(item));
-    }
-    return true;
-  });
+    const candidates = allEntries.filter(({ name }) => {
+      if (mode === "all") return true;
+      if (mode === "prefix") {
+        return name.startsWith(prefix);
+      }
+      if (mode === "list") {
+        return listItems.some((item) => name.startsWith(item));
+      }
+      return true;
+    });
 
-  if (candidates.length === 0) {
-    alert("Aucun dossier ne correspond aux critères.");
-    updateProgress(0, 0, "Aucun dossier trouvé.");
-    return;
-  }
-
-  if (candidates.length > 50) {
-    const proceed = confirm(
-      `Vous allez scanner ${candidates.length} dossiers. Voulez-vous continuer ?`
-    );
-    if (!proceed) {
-      updateProgress(0, 0, "Scan annulé par l'utilisateur.");
+    if (candidates.length === 0) {
+      alert("Aucun dossier ne correspond aux critères.");
+      updateProgress(0, 0, "Aucun dossier trouvé.");
       return;
     }
-  }
 
-  let processed = 0;
-  const total = candidates.length;
-
-  for (const { name, handle } of candidates) {
-    try {
-      const mission = await processMissionFolder(handle, name);
-      if (mission) {
-        allMissions.push(mission);
+    if (candidates.length > 100) {
+      const proceed = confirm(
+        `Vous allez scanner ${candidates.length} dossiers. Voulez-vous continuer ?`
+      );
+      if (!proceed) {
+        updateProgress(0, 0, "Scan annulé par l'utilisateur.");
+        return;
       }
-    } catch (err) {
-      console.error("Erreur lors du traitement du dossier", name, err);
     }
-    processed++;
-    updateProgress(processed, total, `Scan : ${processed} / ${total} dossiers…`);
-  }
 
-  filteredMissions = [...allMissions];
-  populateFilterOptions();
-  renderTable();
-  updateStats();
-  updateProgress(total, total, `Scan terminé : ${allMissions.length} missions valides.`);
+    let processed = 0;
+    const total = candidates.length;
+
+    for (const { name, handle } of candidates) {
+      try {
+        const mission = await processMissionFolder(handle, name);
+        if (mission) {
+          allMissions.push(mission);
+        }
+      } catch (err) {
+        console.error("Erreur lors du traitement du dossier", name, err);
+      }
+      processed++;
+      updateProgress(processed, total, `Scan : ${processed} / ${total} dossiers…`);
+    }
+
+    filteredMissions = [...allMissions];
+    populateFilterOptions();
+    renderTable();
+    updateStats();
+    updateExportButtonsState();
+    updateProgress(total, total, `Scan terminé : ${allMissions.length} missions valides.`);
+
+    if (allMissions.length > 0) {
+      $("#filtersSection").classList.remove("hidden-block");
+    }
+  } catch (err) {
+    console.error("Erreur globale de scan :", err);
+    alert("Erreur lors du scan des dossiers. Voir la console pour le détail.");
+    updateProgress(0, 0, "Erreur lors du scan.");
+  } finally {
+    setScanningState(false);
+  }
+}
+
+function setScanningState(scanning) {
+  isScanning = scanning;
+  $("#btnScan").disabled = scanning || !rootDirHandle;
+  $("#btnPickRoot").disabled = scanning;
 }
 
 async function processMissionFolder(folderHandle, folderName) {
@@ -236,7 +287,7 @@ async function processMissionFolder(folderHandle, folderName) {
 
   const bienXml = await readXmlFile(xmlDir, "Table_General_Bien.xml");
   if (!bienXml) {
-    console.warn(`Table_General_Bien.xml manquant dans ${folderName}`);
+    console.warn(`Table_General_Bien.xml manquant ou invalide dans ${folderName}`);
     return null;
   }
 
@@ -286,10 +337,18 @@ async function processMissionFolder(folderHandle, folderName) {
     numCertif: getXmlValue(bienXml, "LiColonne_Gen_num_certif")
   };
 
+  // Conclusion
   const conclXml = await readXmlFile(xmlDir, "Table_General_Bien_conclusions.xml");
   if (conclXml) {
-    const conclNode = conclXml.querySelector("Conclusion") || conclXml.documentElement;
-    mission.conclusion = conclNode ? conclNode.textContent.trim() : "";
+    // Essais heuristiques de balises possibles
+    const candidates = [
+      conclXml.querySelector("Conclusion"),
+      conclXml.querySelector("LiColonne_Conclusion"),
+      conclXml.querySelector("Texte"),
+      conclXml.documentElement
+    ].filter(Boolean);
+    const node = candidates[0];
+    mission.conclusion = node ? (node.textContent || "").trim() : "";
   } else {
     mission.conclusion = "";
   }
@@ -310,9 +369,15 @@ async function processMissionFolder(folderHandle, folderName) {
     }
   }
 
+  // Champs normalisés pour filtres texte (évite recalculs)
+  mission._norm = {
+    conclusion: (mission.conclusion || "").toLowerCase()
+  };
+
   return mission;
 }
 
+// Lecture générique d'un XML
 async function readXmlFile(dirHandle, fileName) {
   try {
     const fileHandle = await dirHandle.getFileHandle(fileName);
@@ -347,29 +412,49 @@ function decodeMissions(bits) {
   return result;
 }
 
+// Extraction de la photo de présentation avec heuristiques
 async function extractPresentationPhoto(photoXml, missionFolderHandle) {
   let pathText = null;
 
-  const rows = photoXml.querySelectorAll("ROW, Row, row, Photo, PHOTO");
+  const rows = photoXml.querySelectorAll("*");
   for (const row of rows) {
-    const typeNode =
-      row.querySelector("TypePhoto") ||
-      row.querySelector("Type") ||
-      row.querySelector("Libelle") ||
-      row.querySelector("Colonne") ||
-      row.querySelector("Champ");
-    const typeText = typeNode ? typeNode.textContent.trim().toLowerCase() : "";
+    const tagName = row.tagName.toLowerCase();
 
-    if (typeText.includes("présentation") || typeText.includes("presentation")) {
-      const fileNode =
-        row.querySelector("Fichier") ||
-        row.querySelector("Chemin") ||
-        row.querySelector("Path") ||
-        row.querySelector("NomFichier");
-      if (fileNode && fileNode.textContent.trim()) {
-        pathText = fileNode.textContent.trim();
-        break;
-      }
+    // On cherche un nœud décrivant le type/usage de la photo
+    const possibleTypeFields = [
+      row.getAttribute("Type"),
+      row.getAttribute("TypePhoto"),
+      row.getAttribute("Libelle"),
+      row.getAttribute("LibellePhoto"),
+      row.querySelector("TypePhoto")?.textContent,
+      row.querySelector("Libelle")?.textContent,
+      row.querySelector("LibellePhoto")?.textContent,
+      row.querySelector("Colonne")?.textContent,
+      row.querySelector("Champ")?.textContent
+    ].filter(Boolean);
+
+    const typeText = (possibleTypeFields[0] || "").toLowerCase();
+
+    // Si la ligne n’est pas clairement une photo de présentation, on skippe
+    if (!typeText.includes("présentation") && !typeText.includes("presentation")) {
+      continue;
+    }
+
+    // Recherche du chemin de fichier
+    const possiblePathFields = [
+      row.getAttribute("Fichier"),
+      row.getAttribute("Chemin"),
+      row.getAttribute("Path"),
+      row.getAttribute("NomFichier"),
+      row.querySelector("Fichier")?.textContent,
+      row.querySelector("Chemin")?.textContent,
+      row.querySelector("Path")?.textContent,
+      row.querySelector("NomFichier")?.textContent
+    ].filter(Boolean);
+
+    if (possiblePathFields.length) {
+      pathText = possiblePathFields[0].trim();
+      break;
     }
   }
 
@@ -389,6 +474,7 @@ async function extractPresentationPhoto(photoXml, missionFolderHandle) {
   }
 }
 
+// Parcours d'un chemin relatif
 async function getFileFromRelativePath(rootHandle, relPath) {
   const parts = relPath.split("/").filter((p) => !!p && p !== ".");
 
@@ -407,6 +493,9 @@ async function getFileFromRelativePath(rootHandle, relPath) {
   throw new Error("Chemin vide");
 }
 
+// ----------------------------------------
+// Filtres & rendu
+// ----------------------------------------
 function updateProgress(done, total, text) {
   const bar = $("#progressFill");
   const label = $("#progressText");
@@ -506,7 +595,7 @@ function applyFilters() {
     }
 
     if (conclText) {
-      const c = (m.conclusion || "").toLowerCase();
+      const c = m._norm?.conclusion ?? (m.conclusion || "").toLowerCase();
       if (!c.includes(conclText)) return false;
     }
 
@@ -515,6 +604,7 @@ function applyFilters() {
 
   renderTable();
   updateStats();
+  updateExportButtonsState();
 }
 
 function resetFilters() {
@@ -527,6 +617,7 @@ function resetFilters() {
   filteredMissions = [...allMissions];
   renderTable();
   updateStats();
+  updateExportButtonsState();
 }
 
 function getSelectedOptions(selector) {
@@ -596,12 +687,10 @@ function renderTable() {
     tr.appendChild(tdType);
 
     const tdDates = document.createElement("td");
-    tdDates.textContent = [
-      m.mission.dateVisite ? "Visite : " + m.mission.dateVisite : "",
-      m.mission.dateRapport ? "Rapport : " + m.mission.dateRapport : ""
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const lines = [];
+    if (m.mission.dateVisite) lines.push("Visite : " + m.mission.dateVisite);
+    if (m.mission.dateRapport) lines.push("Rapport : " + m.mission.dateRapport);
+    tdDates.textContent = lines.join("\n");
     tr.appendChild(tdDates);
 
     const tdOp = document.createElement("td");
@@ -679,6 +768,14 @@ function updateStats() {
   statsText.textContent = `Missions : ${filt} affichées / ${total} scannées.`;
 }
 
+function updateExportButtonsState() {
+  const hasData = filteredMissions.length > 0;
+  $("#btnExportCSV").disabled = !hasData;
+  $("#btnCopyClipboard").disabled = !hasData;
+  $("#btnExportJSON").disabled = !allMissions.length;
+}
+
+// Modales
 function openConclusionModal(mission) {
   const overlay = $("#modalOverlay");
   const content = $("#modalContent");
@@ -702,6 +799,9 @@ function closePhotoModal() {
   $("#modalPhoto").src = "";
 }
 
+// ----------------------------------------
+// Exports & JSON
+// ----------------------------------------
 function exportFilteredAsCSV() {
   if (!filteredMissions.length) {
     alert("Aucune mission filtrée à exporter.");
@@ -741,7 +841,7 @@ function exportAllAsJSON() {
     exportedAt: new Date().toISOString(),
     missions: allMissions.map((m) => ({
       ...m,
-      photoUrl: null
+      photoUrl: null // on ne garde pas les blob URLs
     }))
   };
   const jsonStr = JSON.stringify(payload, null, 2);
@@ -777,6 +877,7 @@ function onImportJSON(event) {
         throw new Error("Format JSON inattendu");
       }
 
+      // On nettoie les éventuels blobUrl
       allMissions.forEach((m) => {
         if (m.photoUrl) m.photoUrl = null;
       });
@@ -785,7 +886,11 @@ function onImportJSON(event) {
       populateFilterOptions();
       renderTable();
       updateStats();
+      updateExportButtonsState();
       updateProgress(allMissions.length, allMissions.length, "Base JSON chargée (sans rescanner les dossiers).");
+      if (allMissions.length > 0) {
+        $("#filtersSection").classList.remove("hidden-block");
+      }
     } catch (err) {
       console.error("Erreur de lecture du JSON", err);
       alert("Erreur lors de la lecture du fichier JSON.");
