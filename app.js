@@ -1,4 +1,3 @@
-\
     // Dashboard Missions – Synthèse Liciel (version PRO avec correctifs)
     // ----------------------------------------------------
     // - Scan de dossiers LICIEL via File System Access API
