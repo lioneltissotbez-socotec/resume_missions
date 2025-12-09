@@ -342,6 +342,50 @@ async function processMissionFolder(folderHandle, folderName) {
     missionsProgrammes,
     missionsEffectuees: decodeMissions(missionsProgrammes)
   };
+// Découpe le gros bloc de conclusion en un tableau { type, text }
+// en s'appuyant sur les libellés de MISSION_TYPES
+function buildConclusionsList(rawText, missionsEffectuees) {
+  if (!rawText) return [];
+  let txt = rawText.replace(/\\s+/g, " ").trim();
+
+  // On ne garde pour filtrage que les libellés réellement effectués
+  const setEffectuees = new Set(missionsEffectuees || []);
+
+  // On repère les positions de chaque libellé présent dans le texte
+  const found = [];
+  MISSION_TYPES.forEach((label) => {
+    const idx = txt.indexOf(label);
+    if (idx !== -1) {
+      found.push({ label, idx });
+    }
+  });
+
+  if (!found.length) return [];
+
+  found.sort((a, b) => a.idx - b.idx);
+
+  const results = [];
+  for (let i = 0; i < found.length; i++) {
+    const { label, idx } = found[i];
+    const start = idx + label.length;
+    const end = i + 1 < found.length ? found[i + 1].idx : txt.length;
+
+    let chunk = txt.slice(start, end).trim();
+
+    // On nettoie les numéros / indices devant (ex : "0 0", "6 6", etc.)
+    chunk = chunk.replace(/^[0-9\\s:()\\-]+/, "").trim();
+
+    if (!chunk) continue;
+    if (setEffectuees.size && !setEffectuees.has(label)) continue;
+
+    results.push({
+      type: label,
+      text: chunk
+    });
+  }
+
+  return results;
+}
 
   mission.operateur = {
     nomFamille: getXmlValue(bienXml, "LiColonne_Gen_Nom_operateur_UniquementNomFamille"),
@@ -350,10 +394,10 @@ async function processMissionFolder(folderHandle, folderName) {
     numCertif: getXmlValue(bienXml, "LiColonne_Gen_num_certif")
   };
 
-  // Conclusion
+   // Conclusion
   const conclXml = await readXmlFile(xmlDir, "Table_General_Bien_conclusions.xml");
+  let conclusionRaw = "";
   if (conclXml) {
-    // Essais heuristiques de balises possibles
     const candidates = [
       conclXml.querySelector("Conclusion"),
       conclXml.querySelector("LiColonne_Conclusion"),
@@ -361,10 +405,21 @@ async function processMissionFolder(folderHandle, folderName) {
       conclXml.documentElement
     ].filter(Boolean);
     const node = candidates[0];
-    mission.conclusion = node ? (node.textContent || "").trim() : "";
-  } else {
-    mission.conclusion = "";
+    conclusionRaw = node ? (node.textContent || "").trim() : "";
   }
+
+  mission.conclusion = conclusionRaw;           // pour compat éventuelle
+  mission.conclusionRaw = conclusionRaw;        // brut
+  mission.conclusionsList = buildConclusionsList(
+    conclusionRaw,
+    mission.mission.missionsEffectuees
+  );
+
+  // Champs normalisés pour filtres
+  mission._norm = {
+    conclusion: (conclusionRaw || "").toLowerCase()
+  };
+
 
   mission.photoUrl = null;
   mission.photoPath = null;
@@ -382,20 +437,49 @@ async function processMissionFolder(folderHandle, folderName) {
     }
   }
 
-  // Champs normalisés pour filtres texte (évite recalculs)
-  mission._norm = {
-    conclusion: (mission.conclusion || "").toLowerCase()
-  };
-
-  return mission;
-}
-
-// Lecture générique d'un XML
+// Lecture générique d'un XML avec gestion d'encodage (UTF-8 / Windows-1252, etc.)
 async function readXmlFile(dirHandle, fileName) {
   try {
     const fileHandle = await dirHandle.getFileHandle(fileName);
     const file = await fileHandle.getFile();
-    const text = await file.text();
+    const buffer = await file.arrayBuffer();
+
+    // 1) tentative UTF-8 par défaut
+    let textUtf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+    let text = textUtf8;
+
+    // 2) on regarde s'il y a une déclaration d'encodage dans le XML
+    const m = textUtf8.match(/encoding="([^"]+)"/i);
+    const declared = m && m[1] ? m[1].toLowerCase() : null;
+
+    if (declared && declared !== "utf-8" && declared !== "utf8") {
+      // Si l'encodage n'est pas UTF-8, on essaie ce qui est déclaré
+      try {
+        text = new TextDecoder(declared).decode(buffer);
+      } catch (e) {
+        // Si le navigateur ne connaît pas, on tente Windows-1252 (cas classique LICIEL)
+        try {
+          text = new TextDecoder("windows-1252").decode(buffer);
+        } catch (e2) {
+          // on garde le UTF-8 par défaut
+        }
+      }
+    } else {
+      // 3) heuristique : si on voit beaucoup de "�", on tente Windows-1252
+      const badUtf8 = (textUtf8.match(/�/g) || []).length;
+      if (badUtf8 >= 3) {
+        try {
+          const text1252 = new TextDecoder("windows-1252").decode(buffer);
+          const bad1252 = (text1252.match(/�/g) || []).length;
+          if (bad1252 < badUtf8) {
+            text = text1252;
+          }
+        } catch (e) {
+          // rien, on garde UTF-8
+        }
+      }
+    }
+
     const parser = new DOMParser();
     const doc = parser.parseFromString(text, "application/xml");
     if (doc.querySelector("parsererror")) {
@@ -409,21 +493,6 @@ async function readXmlFile(dirHandle, fileName) {
   }
 }
 
-function getXmlValue(xmlDoc, tagName) {
-  const el = xmlDoc.querySelector(tagName);
-  return el ? (el.textContent || "").trim() : "";
-}
-
-function decodeMissions(bits) {
-  if (!bits) return [];
-  const result = [];
-  for (let i = 0; i < bits.length && i < MISSION_TYPES.length; i++) {
-    if (bits[i] === "1") {
-      result.push(MISSION_TYPES[i]);
-    }
-  }
-  return result;
-}
 
 // Extraction de la photo de présentation avec heuristiques
 async function extractPresentationPhoto(photoXml, missionFolderHandle) {
@@ -792,9 +861,49 @@ function updateExportButtonsState() {
 function openConclusionModal(mission) {
   const overlay = $("#modalOverlay");
   const content = $("#modalContent");
-  content.textContent = mission.conclusion || "";
+
+  const list = mission.conclusionsList || [];
+
+  if (list.length) {
+    const table = document.createElement("table");
+    table.style.width = "100%";
+    table.style.borderCollapse = "collapse";
+    table.innerHTML =
+      "<thead><tr>" +
+      "<th style='border-bottom:1px solid #e5e7eb;padding:4px 6px;text-align:left;'>Type de mission</th>" +
+      "<th style='border-bottom:1px solid #e5e7eb;padding:4px 6px;text-align:left;'>Conclusion</th>" +
+      "</tr></thead>";
+
+    const tbody = document.createElement("tbody");
+
+    list.forEach((item) => {
+      const tr = document.createElement("tr");
+
+      const tdType = document.createElement("td");
+      const tdText = document.createElement("td");
+      tdType.style.padding = "4px 6px";
+      tdText.style.padding = "4px 6px";
+      tdType.style.verticalAlign = "top";
+      tdText.style.verticalAlign = "top";
+
+      tdType.textContent = item.type;
+      tdText.textContent = item.text;
+
+      tr.appendChild(tdType);
+      tr.appendChild(tdText);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    content.innerHTML = "";
+    content.appendChild(table);
+  } else {
+    content.textContent = mission.conclusionRaw || "Aucune conclusion disponible pour cette mission.";
+  }
+
   overlay.classList.remove("hidden");
 }
+
 
 function closeConclusionModal() {
   $("#modalOverlay").classList.add("hidden");
